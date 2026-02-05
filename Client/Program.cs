@@ -51,6 +51,7 @@ namespace Client
                     Console.WriteLine("  2 - Lista dostupnih knjiga");
                     Console.WriteLine("  3 - Iznajmi knjigu");
                     Console.WriteLine("  4 - Moje iznajmljene knjige");
+                    Console.WriteLine("  5 - Vrati knjigu");
                     Console.WriteLine("  0 - Izlaz");
                     Console.Write("Izbor: ");
                     string izbor = (Console.ReadLine() ?? "").Trim();
@@ -119,6 +120,47 @@ namespace Client
                                 Console.WriteLine(" - " + x);
                         }
                     }
+                    else if (izbor == "5")
+                    {
+                        if (sMojeIznajmljene.Count == 0)
+                        {
+                            Console.WriteLine("Nemaš iznajmljenih knjiga za vraćanje.");
+                            continue;
+                        }
+
+                        Console.WriteLine("Izaberi knjigu za vraćanje (unesi broj):");
+                        for (int i = 0; i < sMojeIznajmljene.Count; i++)
+                            Console.WriteLine($"  {i + 1} - {sMojeIznajmljene[i]}");
+
+                        Console.Write("Broj: ");
+                        if (!int.TryParse(Console.ReadLine(), out int idx) || idx < 1 || idx > sMojeIznajmljene.Count)
+                        {
+                            Console.WriteLine("Neispravan izbor.");
+                            continue;
+                        }
+
+                        string knjStr = sMojeIznajmljene[idx - 1]; // "Naslov|Autor"
+                        string[] p = knjStr.Split('|');
+                        string naslov = p[0].Trim();
+                        string autor = (p.Length > 1) ? p[1].Trim() : "";
+
+                        string req = $"VRATI|{id}|{naslov}|{autor}";
+                        SendTcpLine(s, req);
+
+                        string resp = RecvLine(s);
+
+                        if (resp.StartsWith("OK|VRACENO", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // ukloni iz lokalne evidencije
+                            sMojeIznajmljene.RemoveAt(idx - 1);
+                            Console.WriteLine("Knjiga je uspešno vraćena i uklonjena iz tvoje evidencije.");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Odgovor servera: " + resp);
+                        }
+                    }
+
                     else
                     {
                         Console.WriteLine("Nepoznata opcija.");

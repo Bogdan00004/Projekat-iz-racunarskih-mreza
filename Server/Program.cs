@@ -269,6 +269,12 @@ namespace Server
                     SendTcp(client, resp);
                     return;
                 }
+                else if (cmd == "VRATI")
+                {
+                    string resp = ObradiVracanje(parts);
+                    SendTcp(client, resp);
+                    return;
+                }
 
                 // ako dođe neka druga poruka
                 Console.WriteLine($"[TCP] Nepoznata komanda: {msg}");
@@ -288,6 +294,51 @@ namespace Server
                 RemoveClient(client);
             }
         }
+        private static string ObradiVracanje(string[] parts)
+        {
+            // VRATI|ID|Naslov|Autor
+            if (parts.Length < 4)
+                return "NE|LOSE_FORMATIRANO";
+
+            if (!int.TryParse(parts[1].Trim(), out int clanId))
+                return "NE|LOSE_FORMATIRANO";
+
+            string naslov = parts[2].Trim();
+            string autor = parts[3].Trim();
+
+            // Nađi knjigu u biblioteci (da možemo da uvećamo količinu)
+            Knjiga knj = sKnjige.FirstOrDefault(k =>
+                k != null &&
+                string.Equals(k.Naslov?.Trim(), naslov, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(k.Autor?.Trim(), autor, StringComparison.OrdinalIgnoreCase));
+
+            if (knj == null)
+                return "NE|NE_POSTOJI";
+
+            // Nađi iznajmljivanje koje odgovara ovom članu i ovoj knjizi
+            string knjigaKey = $"{knj.Naslov}|{knj.Autor}";
+
+            Iznajmljivanje iz = sIznajmljivanja.FirstOrDefault(x =>
+                x != null &&
+                x.Clan == clanId &&
+                string.Equals(x.Knjiga?.Trim(), knjigaKey, StringComparison.OrdinalIgnoreCase));
+
+            if (iz == null)
+                return "NE|NEMA_IZNAJMLJIVANJA";
+
+            // Ukloni iz evidencije iznajmljivanja
+            sIznajmljivanja.Remove(iz);
+
+            // Uvećaj količinu dostupnih primeraka
+            knj.Kolicina++;
+
+            Console.WriteLine($"[TCP] Vraćeno: {knjigaKey} | Clan={clanId}");
+
+            return "OK|VRACENO";
+        }
+
+
+
         private static string ObradiIznajmljivanje(string[] parts)
         {
             // IZNAJMI|ID|Naslov|Autor
