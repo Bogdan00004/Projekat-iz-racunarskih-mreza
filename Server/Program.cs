@@ -15,7 +15,7 @@ namespace Server
         private static Socket sTcpListen;
         private static Socket sUdpInfo;
 
-        private static List<Socket> sTcpClients = new List<Socket>();
+        private static Dictionary<Socket, ClientState> sClients = new Dictionary<Socket, ClientState>();
         private static List<Knjiga> sKnjige = new List<Knjiga>();
         private static List<Iznajmljivanje> sIznajmljivanja = new List<Iznajmljivanje>();
 
@@ -81,7 +81,7 @@ namespace Server
                 checkRead.Add(sTcpListen);
                 checkError.Add(sTcpListen);
 
-                foreach (var c in sTcpClients)
+                foreach (var c in sClients.Keys)
                 {
                     checkRead.Add(c);
                     checkError.Add(c);
@@ -121,7 +121,8 @@ namespace Server
             // GAŠENJE
             try
             {
-                foreach (var c in sTcpClients) c.Close();
+                foreach (var c in sClients.Keys.ToList())
+                    c.Close();
             }
             catch (Exception ex)
             {
@@ -136,6 +137,14 @@ namespace Server
 
             Console.WriteLine("Server je uspešno ugašen.");
         }
+        class ClientState
+        {
+            public int Id;
+            public Socket Sock;
+            public IPEndPoint Remote;
+            public StringBuilder TcpBuffer = new StringBuilder(); // skuplja podatke do '\n'
+        }
+
         private static void HandleUdpMessage()
         {
             try
@@ -225,13 +234,23 @@ namespace Server
             {
                 Socket client = sTcpListen.Accept();
                 client.Blocking = false;
-                sTcpClients.Add(client);
 
                 int id = sNextId++;
-                SendLine(client, id.ToString());
 
-                IPEndPoint ep = (IPEndPoint)client.RemoteEndPoint;
-                Console.WriteLine($"[TCP] Prijava klijenta: {ep.Address}:{ep.Port} -> dodeljen ID = {id}");
+                var st = new ClientState
+                {
+                    Id = id,
+                    Sock = client,
+                    Remote = (IPEndPoint)client.RemoteEndPoint
+                };
+
+                sClients[client] = st;
+
+                // po konekciji šaljemo ID
+                SendTcp(client, id.ToString());
+
+                Console.WriteLine($"[TCP] Prijava klijenta: {st.Remote.Address}:{st.Remote.Port} -> dodeljen ID = {id}");
+
             }
             catch (SocketException se)
             {
@@ -249,51 +268,79 @@ namespace Server
         {
             try
             {
-                // pročitaj jednu liniju (komandu)
-                string msg = RecvTcpLine(client);
-
-                if (string.IsNullOrWhiteSpace(msg))
+                if (!sClients.TryGetValue(client, out var st))
                 {
-                    // klijent zatvorio ili poslao prazno
                     RemoveClient(client);
                     return;
                 }
 
-                // očekujemo: IZNAJMI|ID|Naslov|Autor
-                string[] parts = msg.Split('|');
-                string cmd = parts[0].Trim().ToUpperInvariant();
+                byte[] buf = new byte[2048];
+                int n = client.Receive(buf);
 
-                if (cmd == "IZNAJMI")
+                if (n <= 0)
                 {
-                    string resp = ObradiIznajmljivanje(parts);
-                    SendTcp(client, resp);
-                    return;
-                }
-                else if (cmd == "VRATI")
-                {
-                    string resp = ObradiVracanje(parts);
-                    SendTcp(client, resp);
+                    RemoveClient(client);
                     return;
                 }
 
-                // ako dođe neka druga poruka
-                Console.WriteLine($"[TCP] Nepoznata komanda: {msg}");
+                // dodaj u per-klijent buffer
+                st.TcpBuffer.Append(Encoding.UTF8.GetString(buf, 0, n));
+
+                // obradi sve kompletne linije
+                while (true)
+                {
+                    string all = st.TcpBuffer.ToString();
+                    int idx = all.IndexOf('\n');
+                    if (idx < 0) break;
+
+                    string line = all.Substring(0, idx).Trim('\r', ' ', '\t');
+                    st.TcpBuffer.Remove(0, idx + 1);
+
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    ObradiTcpKomandu(st, line);
+                }
             }
             catch (SocketException se)
             {
-                // 10035 =(nema podataka trenutno)
-                if (se.ErrorCode != 10035)
+                if (se.ErrorCode != 10035) // WSAEWOULDBLOCK
                 {
-                    Console.WriteLine("[TCP] Greška pri prijemu poruke od klijenta: " + se.Message + $" (kod={se.ErrorCode})");
+                    Console.WriteLine("[TCP] Receive greška: " + se.Message + $" (kod={se.ErrorCode})");
                     RemoveClient(client);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[TCP] Opšta greška pri prijemu poruke: " + ex.Message);
+                Console.WriteLine("[TCP] Opšta greška: " + ex.Message);
                 RemoveClient(client);
             }
         }
+
+        private static void ObradiTcpKomandu(ClientState st, string msg)
+        {
+            // msg format: IZNAJMI|ID|Naslov|Autor  ili  VRATI|ID|Naslov|Autor
+            string[] parts = msg.Split('|');
+            string cmd = parts[0].Trim().ToUpperInvariant();
+
+            // (opciono) loguj ko šalje
+            Console.WriteLine($"[TCP] ({st.Id}) {st.Remote.Address}:{st.Remote.Port} -> {msg}");
+
+            if (cmd == "IZNAJMI")
+            {
+                string resp = ObradiIznajmljivanje(parts);
+                SendTcp(st.Sock, resp);
+                return;
+            }
+            if (cmd == "VRATI")
+            {
+                string resp = ObradiVracanje(parts);
+                SendTcp(st.Sock, resp);
+                return;
+            }
+
+            SendTcp(st.Sock, "NE|NEPOZNATA_KOMANDA");
+        }
+
         private static string ObradiVracanje(string[] parts)
         {
             // VRATI|ID|Naslov|Autor
@@ -380,18 +427,20 @@ namespace Server
         {
             try
             {
-                IPEndPoint ep = client.RemoteEndPoint as IPEndPoint;
-                Console.WriteLine($"[TCP] Klijent je prekinuo vezu: {ep?.Address}:{ep?.Port}");
+                if (sClients.TryGetValue(client, out var st))
+                    Console.WriteLine($"[TCP] Klijent diskonektovan: {st.Remote.Address}:{st.Remote.Port} (ID={st.Id})");
+                else
+                    Console.WriteLine("[TCP] Klijent diskonektovan (nepoznat).");
             }
             catch (Exception ex)
             {
                 Console.WriteLine("[TCP] Greška pri čitanju podataka o klijentu: " + ex.Message);
             }
 
-            try { client.Close(); }
-            catch (Exception ex) { Console.WriteLine("[TCP] Greška pri zatvaranju klijenta: " + ex.Message); }
+            try { client.Close(); } catch { }
 
-            sTcpClients.Remove(client);
+            if (sClients.ContainsKey(client))
+                sClients.Remove(client);
         }
 
         private static void SendLine(Socket client, string line)
