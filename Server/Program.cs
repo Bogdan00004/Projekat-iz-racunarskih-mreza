@@ -1,11 +1,10 @@
-﻿using Biblioteka;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-
+using Biblioteka;
 namespace Server
 {
     internal class Program
@@ -20,6 +19,13 @@ namespace Server
         private static List<Knjiga> sKnjige = new List<Knjiga>();
 
         private static int sNextId = 1000;
+
+        private static Dictionary<string, DateTime> sPoslednjiZahtev = new Dictionary<string, DateTime>();
+
+        private static string Key(string naslov, string autor)
+        {
+            return (naslov ?? "").Trim().ToLowerInvariant() + "|" + (autor ?? "").Trim().ToLowerInvariant();
+        }
 
         static void Main(string[] args)
         {
@@ -99,7 +105,7 @@ namespace Server
                     }
                     else if (s == sUdpInfo)
                     {
-                        DrainUdpDummy();
+                        HandleUdpMessage();
                     }
                     else
                     {
@@ -127,7 +133,89 @@ namespace Server
 
             Console.WriteLine("Server je uspešno ugašen.");
         }
+        private static void HandleUdpMessage()
+        {
+            try
+            {
+                EndPoint remote = new IPEndPoint(IPAddress.Any, 0);
+                byte[] buf = new byte[4096];
+                int n = sUdpInfo.ReceiveFrom(buf, ref remote);
+                if (n <= 0) return;
 
+                string req = Encoding.UTF8.GetString(buf, 0, n).Trim();
+                string resp = ObradiUdpZahtev(req);
+
+                byte[] outData = Encoding.UTF8.GetBytes(resp);
+                sUdpInfo.SendTo(outData, remote);
+            }
+            catch (SocketException se)
+            {
+                // 10035 = WSAEWOULDBLOCK
+                if (se.ErrorCode != 10035)
+                    Console.WriteLine("[UDP] Greška pri prijemu UDP poruke: " + se.Message + $" (kod={se.ErrorCode})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[UDP] Opšta greška pri obradi UDP poruke: " + ex.Message);
+            }
+        }
+        private static string ObradiUdpZahtev(string req)
+        {
+            if (string.IsNullOrWhiteSpace(req))
+                return "NE|PRAZAN_ZAHTEV|NIKAD";
+
+            string[] parts = req.Split('|');
+
+            // LISTA
+            if (parts[0].Trim().ToUpperInvariant() == "LISTA")
+            {
+                var dostupne = sKnjige.Where(k => k != null && k.Kolicina > 0).ToList();
+
+                StringBuilder sb = new StringBuilder();
+                sb.Append("LISTA|").Append(dostupne.Count).Append('\n');
+
+                foreach (var k in dostupne)
+                    sb.Append(k.Naslov).Append('|').Append(k.Autor).Append('|').Append(k.Kolicina).Append('\n');
+
+                return sb.ToString().TrimEnd('\n');
+            }
+
+            // PROVERA|Naslov|Autor
+            if (parts[0].Trim().ToUpperInvariant() == "PROVERA")
+            {
+                if (parts.Length < 3)
+                    return "NE|LOSE_FORMATIRANO|NIKAD";
+
+                string naslov = parts[1].Trim();
+                string autor = parts[2].Trim();
+                string key = Key(naslov, autor);
+
+                // vreme poslednjeg zahteva (ako postoji)
+                string poslednjiStr = "NIKAD";
+                if (sPoslednjiZahtev.TryGetValue(key, out DateTime dt))
+                    poslednjiStr = dt.ToString("dd.MM.yyyy HH:mm:ss");
+
+                // AŽURIRAJ poslednji zahtev (svaki PROVERA upit smatramo zahtevom)
+                sPoslednjiZahtev[key] = DateTime.Now;
+                poslednjiStr = sPoslednjiZahtev[key].ToString("dd.MM.yyyy HH:mm:ss");
+
+                // nađi knjigu
+                var knj = sKnjige.FirstOrDefault(k =>
+                    k != null &&
+                    string.Equals(k.Naslov?.Trim(), naslov, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(k.Autor?.Trim(), autor, StringComparison.OrdinalIgnoreCase));
+
+                if (knj == null)
+                    return "NE|NE_POSTOJI|" + poslednjiStr;
+
+                if (knj.Kolicina > 0)
+                    return "OK|" + knj.Kolicina + "|" + poslednjiStr;
+
+                return "NE|NEMA_NA_STANJU|" + poslednjiStr;
+            }
+
+            return "NE|NEPOZNATA_KOMANDA|NIKAD";
+        }
         private static void AcceptNewClient()
         {
             try
@@ -209,26 +297,6 @@ namespace Server
         {
             byte[] data = Encoding.UTF8.GetBytes(line + "\n");
             client.Send(data);
-        }
-
-        private static void DrainUdpDummy()
-        {
-            try
-            {
-                EndPoint remote = new IPEndPoint(IPAddress.Any, 0);
-                byte[] buf = new byte[2048];
-                int n = sUdpInfo.ReceiveFrom(buf, ref remote);
-            }
-            catch (SocketException se)
-            {
-                // 10035 = WSAEWOULDBLOCK
-                if (se.ErrorCode != 10035)
-                    Console.WriteLine("[UDP] Greška pri prijemu UDP poruke: " + se.Message + $" (kod={se.ErrorCode})");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("[UDP] Opšta greška pri prijemu UDP poruke: " + ex.Message);
-            }
         }
 
         private static void AddBook() // dodaj knjigu

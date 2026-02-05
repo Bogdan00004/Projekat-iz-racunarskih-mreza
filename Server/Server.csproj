@@ -54,10 +54,6 @@
       <Project>{97ccce4e-1920-4eaf-857b-ab229d55fcec}</Project>
       <Name>Biblioteka</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Client\Client.csproj">
-      <Project>{5fee6953-2d82-4dca-b908-5f42c1cd5e9e}</Project>
-      <Name>Client</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
