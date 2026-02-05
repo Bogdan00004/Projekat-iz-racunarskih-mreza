@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36717.8 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Server", "Server.csproj", "{C09CA0FA-1D89-47ED-BB4C-CAB4F2C708B1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "..\Client\Client.csproj", "{5FEE6953-2D82-4DCA-B908-5F42C1CD5E9E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Biblioteka", "..\Biblioteka\Biblioteka.csproj", "{97CCCE4E-1920-4EAF-857B-AB229D55FCEC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C09CA0FA-1D89-47ED-BB4C-CAB4F2C708B1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C09CA0FA-1D89-47ED-BB4C-CAB4F2C708B1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C09CA0FA-1D89-47ED-BB4C-CAB4F2C708B1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C09CA0FA-1D89-47ED-BB4C-CAB4F2C708B1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5FEE6953-2D82-4DCA-B908-5F42C1CD5E9E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FEE6953-2D82-4DCA-B908-5F42C1CD5E9E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5FEE6953-2D82-4DCA-B908-5F42C1CD5E9E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5FEE6953-2D82-4DCA-B908-5F42C1CD5E9E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{97CCCE4E-1920-4EAF-857B-AB229D55FCEC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97CCCE4E-1920-4EAF-857B-AB229D55FCEC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97CCCE4E-1920-4EAF-857B-AB229D55FCEC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97CCCE4E-1920-4EAF-857B-AB229D55FCEC}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {34B58FE1-CD6B-425E-ADA2-856023154390}
+	EndGlobalSection
+EndGlobal
