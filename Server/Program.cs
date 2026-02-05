@@ -1,10 +1,10 @@
-﻿using System;
+﻿using Biblioteka;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using Biblioteka;
 namespace Server
 {
     internal class Program
@@ -17,6 +17,7 @@ namespace Server
 
         private static List<Socket> sTcpClients = new List<Socket>();
         private static List<Knjiga> sKnjige = new List<Knjiga>();
+        private static List<Iznajmljivanje> sIznajmljivanja = new List<Iznajmljivanje>();
 
         private static int sNextId = 1000;
 
@@ -50,6 +51,7 @@ namespace Server
             Console.WriteLine("Komande servera:");
             Console.WriteLine("  ADD  - dodaj knjigu");
             Console.WriteLine("  LIST - prikaži knjige");
+            Console.WriteLine("  RENT - prikazi iznajmljivanja");
             Console.WriteLine("  EXIT - ugasi server");
             Console.WriteLine();
 
@@ -64,6 +66,7 @@ namespace Server
 
                     if (cmd == "ADD") AddBook();
                     else if (cmd == "LIST") ListBooks();
+                    else if (cmd == "RENT") ListRentals();
                     else if (cmd == "EXIT") running = false;
                     else Console.WriteLine("Nepoznata komanda. (ADD/LIST/EXIT)");
                 }
@@ -246,18 +249,29 @@ namespace Server
         {
             try
             {
-                byte[] buf = new byte[1024];
-                int n = client.Receive(buf);
+                // pročitaj jednu liniju (komandu)
+                string msg = RecvTcpLine(client);
 
-                if (n <= 0)
+                if (string.IsNullOrWhiteSpace(msg))
                 {
+                    // klijent zatvorio ili poslao prazno
                     RemoveClient(client);
                     return;
                 }
 
-                string msg = Encoding.UTF8.GetString(buf, 0, n).Trim();
-                if (msg.Length > 0)
-                    Console.WriteLine($"[TCP] Primljena poruka od klijenta: {msg}");
+                // očekujemo: IZNAJMI|ID|Naslov|Autor
+                string[] parts = msg.Split('|');
+                string cmd = parts[0].Trim().ToUpperInvariant();
+
+                if (cmd == "IZNAJMI")
+                {
+                    string resp = ObradiIznajmljivanje(parts);
+                    SendTcp(client, resp);
+                    return;
+                }
+
+                // ako dođe neka druga poruka
+                Console.WriteLine($"[TCP] Nepoznata komanda: {msg}");
             }
             catch (SocketException se)
             {
@@ -273,6 +287,42 @@ namespace Server
                 Console.WriteLine("[TCP] Opšta greška pri prijemu poruke: " + ex.Message);
                 RemoveClient(client);
             }
+        }
+        private static string ObradiIznajmljivanje(string[] parts)
+        {
+            // IZNAJMI|ID|Naslov|Autor
+            if (parts.Length < 4)
+                return "NE|LOSE_FORMATIRANO";
+
+            if (!int.TryParse(parts[1].Trim(), out int clanId))
+                return "NE|LOSE_FORMATIRANO";
+
+            string naslov = parts[2].Trim();
+            string autor = parts[3].Trim();
+
+            // nađi knjigu
+            Knjiga knj = sKnjige.FirstOrDefault(k => k != null && string.Equals(k.Naslov?.Trim(), naslov, StringComparison.OrdinalIgnoreCase) && string.Equals(k.Autor?.Trim(), autor, StringComparison.OrdinalIgnoreCase));
+
+            if (knj == null)
+                return "NE|NE_POSTOJI";
+
+            if (knj.Kolicina <= 0)
+                return "NE|NEMA_NA_STANJU";
+
+            // smanji količinu
+            knj.Kolicina--;
+
+            // napravi iznajmljivanje
+            Iznajmljivanje iz = new Iznajmljivanje();
+            iz.Clan = clanId;
+            iz.Knjiga = $"{knj.Naslov}|{knj.Autor}";
+            iz.DatumVracanja = DateTime.Now.AddDays(14);
+
+            sIznajmljivanja.Add(iz);
+
+            Console.WriteLine($"[TCP] Iznajmljeno: {iz}");
+
+            return "OK|IZNAJMLJENO|" + iz.DatumVracanja.ToString("dd.MM.yyyy");
         }
 
         private static void RemoveClient(Socket client)
@@ -298,7 +348,34 @@ namespace Server
             byte[] data = Encoding.UTF8.GetBytes(line + "\n");
             client.Send(data);
         }
+        private static void SendTcp(Socket client, string text)
+        {
+            // TCP odgovor kao linija
+            byte[] data = Encoding.UTF8.GetBytes(text + "\n");
+            client.Send(data);
+        }
 
+        private static string RecvTcpLine(Socket client)
+        {
+            // čitamo do '\n' (kao client)
+            StringBuilder sb = new StringBuilder();
+            byte[] b = new byte[1];
+
+            while (true)
+            {
+                int n = client.Receive(b);
+                if (n <= 0) break;
+
+                char c = (char)b[0];
+                if (c == '\n') break;
+                if (c != '\r') sb.Append(c);
+
+                // sigurnosno (da ne dođe do beskonačnog čitanja)
+                if (sb.Length > 4096) break;
+            }
+
+            return sb.ToString().Trim();
+        }
         private static void AddBook() // dodaj knjigu
         {
             Knjiga k = new Knjiga();
@@ -319,6 +396,18 @@ namespace Server
 
             sKnjige.Add(k);
             Console.WriteLine("Knjiga je uspešno dodata.");
+        }
+        private static void ListRentals()
+        {
+            if (sIznajmljivanja.Count == 0)
+            {
+                Console.WriteLine("Nema iznajmljivanja.");
+                return;
+            }
+
+            Console.WriteLine("Iznajmljivanja:");
+            foreach (var r in sIznajmljivanja)
+                Console.WriteLine(" - " + r);
         }
 
         private static void ListBooks() // prikaži knjige

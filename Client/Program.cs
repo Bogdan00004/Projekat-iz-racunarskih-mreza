@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -7,6 +8,7 @@ namespace Client
 {
     internal class Program
     {
+        private static List<string> sMojeIznajmljene = new List<string>();
         private const int UDP_PORT = 5001;
         static void Main(string[] args)
         {
@@ -44,9 +46,11 @@ namespace Client
                 while (run)
                 {
                     Console.WriteLine();
-                    Console.WriteLine("UDP meni:");
+                    Console.WriteLine("Glavni meni:");
                     Console.WriteLine("  1 - Provera knjige");
                     Console.WriteLine("  2 - Lista dostupnih knjiga");
+                    Console.WriteLine("  3 - Iznajmi knjigu");
+                    Console.WriteLine("  4 - Moje iznajmljene knjige");
                     Console.WriteLine("  0 - Izlaz");
                     Console.Write("Izbor: ");
                     string izbor = (Console.ReadLine() ?? "").Trim();
@@ -72,6 +76,49 @@ namespace Client
                         Console.WriteLine("Odgovor servera:");
                         Console.WriteLine(resp.Replace('|', ' '));
                     }
+                    else if (izbor == "3")
+                    {
+                        Console.Write("Naslov: ");
+                        string naslov = (Console.ReadLine() ?? "").Trim();
+
+                        Console.Write("Autor: ");
+                        string autor = (Console.ReadLine() ?? "").Trim();
+
+                        // TCP zahtev
+                        string req = $"IZNAJMI|{id}|{naslov}|{autor}";
+                        SendTcpLine(s, req);
+
+                        string resp = RecvLine(s); // server vraća jednu liniju
+
+                        if (resp.StartsWith("OK|IZNAJMLJENO|", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string[] p = resp.Split('|');
+                            string datumVracanja = (p.Length >= 3) ? p[2] : "?";
+
+                            Console.WriteLine("Knjiga je uspešno iznajmljena.");
+                            Console.WriteLine("Vratiti do: " + datumVracanja);
+
+                            sMojeIznajmljene.Add(naslov + "|" + autor);
+                            Console.WriteLine("Sačuvano u listi iznajmljenih knjiga.");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Odgovor servera: " + resp);
+                        }
+                    }
+                    else if (izbor == "4")
+                    {
+                        if (sMojeIznajmljene.Count == 0)
+                        {
+                            Console.WriteLine("Nemaš iznajmljenih knjiga.");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Moje iznajmljene knjige:");
+                            foreach (var x in sMojeIznajmljene)
+                                Console.WriteLine(" - " + x);
+                        }
+                    }
                     else
                     {
                         Console.WriteLine("Nepoznata opcija.");
@@ -86,6 +133,11 @@ namespace Client
             {
                 Console.WriteLine("Greška: " + ex.Message);
             }
+        }
+        private static void SendTcpLine(Socket s, string line)
+        {
+            byte[] data = Encoding.UTF8.GetBytes(line + "\n");
+            s.Send(data);
         }
         private static string UdpRequest(Socket udp, IPEndPoint server, string text)
         {
