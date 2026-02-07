@@ -5,6 +5,8 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.IO;
+using System.Runtime.Serialization.Formatters.Binary;
 namespace Server
 {
     internal class Program
@@ -19,6 +21,9 @@ namespace Server
         private static List<Knjiga> sKnjige = new List<Knjiga>();
         private static List<Iznajmljivanje> sIznajmljivanja = new List<Iznajmljivanje>();
 
+        private const string FAJL_KNJIGE = "knjige.bin";
+        private const string FAJL_IZNAJMLJIVANJA = "iznajmljivanja.bin";
+
         private static int sNextId = 1000;
 
         private static Dictionary<string, DateTime> sPoslednjiZahtev = new Dictionary<string, DateTime>();
@@ -31,6 +36,9 @@ namespace Server
         static void Main(string[] args)
         {
             Console.OutputEncoding = Encoding.UTF8;
+            UcitajStanje();
+            PrijaviNevracene();
+
 
             // TCP PRISTUPNA
             sTcpListen = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -134,6 +142,8 @@ namespace Server
 
             try { sUdpInfo.Close(); }
             catch (Exception ex) { Console.WriteLine("[GAŠENJE] Greška pri zatvaranju UDP utičnice: " + ex.Message); }
+
+            SacuvajStanje();
 
             Console.WriteLine("Server je uspešno ugašen.");
         }
@@ -315,6 +325,7 @@ namespace Server
                 RemoveClient(client);
             }
         }
+
 
         private static void ObradiTcpKomandu(ClientState st, string msg)
         {
@@ -537,5 +548,102 @@ namespace Server
                 return null;
             }
         }
+        private static void UcitajStanje()
+        {
+            try
+            {
+                if (File.Exists(FAJL_KNJIGE))
+                {
+                    using (FileStream fs = new FileStream(FAJL_KNJIGE, FileMode.Open))
+                    {
+                        BinaryFormatter bf = new BinaryFormatter();
+                        sKnjige = (List<Knjiga>)bf.Deserialize(fs);
+                    }
+                    Console.WriteLine($"[START] Učitano knjiga: {sKnjige.Count}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[START] Greška pri učitavanju knjiga: " + ex.Message);
+                sKnjige = new List<Knjiga>();
+            }
+
+            try
+            {
+                if (File.Exists(FAJL_IZNAJMLJIVANJA))
+                {
+                    using (FileStream fs = new FileStream(FAJL_IZNAJMLJIVANJA, FileMode.Open))
+                    {
+                        BinaryFormatter bf = new BinaryFormatter();
+                        sIznajmljivanja = (List<Iznajmljivanje>)bf.Deserialize(fs);
+                    }
+                    Console.WriteLine($"[START] Učitano iznajmljivanja: {sIznajmljivanja.Count}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[START] Greška pri učitavanju iznajmljivanja: " + ex.Message);
+                sIznajmljivanja = new List<Iznajmljivanje>();
+            }
+
+            Console.WriteLine();
+        }
+
+        private static void SacuvajStanje()
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(FAJL_KNJIGE, FileMode.Create))
+                {
+                    BinaryFormatter bf = new BinaryFormatter();
+                    bf.Serialize(fs, sKnjige);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[GAŠENJE] Greška pri snimanju knjiga: " + ex.Message);
+            }
+
+            try
+            {
+                using (FileStream fs = new FileStream(FAJL_IZNAJMLJIVANJA, FileMode.Create))
+                {
+                    BinaryFormatter bf = new BinaryFormatter();
+                    bf.Serialize(fs, sIznajmljivanja);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[GAŠENJE] Greška pri snimanju iznajmljivanja: " + ex.Message);
+            }
+        }
+        private static void PrijaviNevracene()
+        {
+            DateTime sada = DateTime.Now;
+
+            var kasne = sIznajmljivanja
+                .Where(x => x != null && x.DatumVracanja < sada)
+                .ToList();
+
+            if (kasne.Count == 0)
+            {
+                Console.WriteLine("[START] Nema nevraćenih knjiga.");
+                Console.WriteLine();
+                return;
+            }
+
+            Console.WriteLine("[START] Nevraćene knjige:");
+
+            var grupisano = kasne
+                .GroupBy(x => x.Knjiga)
+                .Select(g => new { Knjiga = g.Key, Broj = g.Count() });
+
+            foreach (var g in grupisano)
+                Console.WriteLine($" - {g.Knjiga} | nevraćeno primeraka: {g.Broj}");
+
+            Console.WriteLine();
+        }
+
+
     }
 }
